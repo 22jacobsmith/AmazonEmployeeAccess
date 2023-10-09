@@ -4,9 +4,15 @@ library(tidyverse)
 library(vroom)
 library(embed)
 library(ggmosaic)
+library(tidymodels)
 ### read in test and training data
 az_train <- vroom("train.csv")
 az_test <- vroom("test.csv")
+
+## make action a factor
+
+az_train$ACTION = factor(az_train$ACTION)
+
 #head(az_train)
 
 ## explore the data
@@ -25,16 +31,37 @@ tibble(ROLE_TITLE = az_train$ROLE_TITLE,ACTION = az_train$ACTION) %>%
 az_recipe <- recipe(ACTION~., data=az_train) %>%
   step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
   step_other(all_nominal_predictors(), threshold = .01) %>% # combines categorical values that occur <1% into an "other" value
-  step_dummy(all_nominal_predictors()) # dummy variable encoding
+  step_dummy(all_nominal_predictors())
    
 
 
-# NOTE: some of these step functions are not appropriate to use together
-
-# apply the recipe to your data
+# apply the recipe to the data
 prep <- prep(az_recipe)
 baked <- bake(prep, new_data = az_train)
-head(baked) %>% View()
 
 
-#112
+## 112
+
+### LOGISTIC REGRESSION
+# fit a logistic regression model
+
+logistic_model <- logistic_reg() %>%
+  set_engine("glm")
+
+
+# set up the workflow
+
+logistic_wf <- workflow() %>%
+  add_recipe(az_recipe) %>%
+  add_model(logistic_model) %>%
+  fit(data = az_train)
+
+
+logistic_preds <- predict(logistic_wf, new_data = az_test,
+                          type = "prob")
+
+# prepare for submission to kaggle
+
+logistic_output <- tibble(id = az_test$id, Action = logistic_preds$.pred_1)
+
+vroom_write(logistic_output, "logisticPreds.csv", delim = ",")
