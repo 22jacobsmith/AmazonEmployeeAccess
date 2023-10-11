@@ -65,3 +65,72 @@ logistic_preds <- predict(logistic_wf, new_data = az_test,
 logistic_output <- tibble(id = az_test$id, Action = logistic_preds$.pred_1)
 
 vroom_write(logistic_output, "logisticPreds.csv", delim = ",")
+
+
+
+
+### PENALIZED LOGISTIC REGRESSION
+
+# use target encoding
+
+# set up penalized regression recipe
+az_pen_recipe <- recipe(ACTION~., data=az_train) %>%
+  step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
+  step_other(all_nominal_predictors(), threshold = .001) %>%
+  step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION))
+
+
+
+# apply the recipe to the data
+prep <- prep(az_pen_recipe)
+
+baked <- bake(prep, new_data = az_train)
+
+# set up model and workflow
+plog_mod <- logistic_reg(mixture = tune(), penalty = tune()) %>%
+  set_engine("glmnet")
+
+az_pen_wf <- 
+    workflow() %>%
+    add_recipe(az_pen_recipe) %>%
+    add_model(plog_mod)
+
+## set up a tuning grid
+tuning_grid <-
+  grid_regular(penalty(),
+               mixture(),
+               levels = 5)
+
+## split into folds
+folds <- vfold_cv(az_train, v = 5, repeats = 1)
+
+# run cv
+
+CV_results <-
+  az_pen_wf %>%
+  tune_grid(resamples = folds,
+            grid = tuning_grid,
+            metrics = metric_set(roc_auc))
+
+# find best tuning parm values
+
+best_tune <-
+  CV_results %>%
+  select_best("roc_auc")
+
+# finalize wf and get preds
+
+final_wf <-
+  az_pen_wf %>%
+  finalize_workflow(best_tune) %>%
+  fit(data = az_train)
+
+plog_preds <-
+  final_wf %>%
+  predict(new_data = az_test, type = "prob")
+
+# prepare and export preds to csv for kaggle
+
+plog_output <- tibble(id = az_test$id, Action = plog_preds$.pred_1)
+
+vroom_write(plog_output, "PenLogPreds.csv", delim = ",")
