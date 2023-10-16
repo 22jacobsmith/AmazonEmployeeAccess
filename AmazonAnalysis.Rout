@@ -1,0 +1,255 @@
+
+R version 4.3.1 (2023-06-16) -- "Beagle Scouts"
+Copyright (C) 2023 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> # Amazon Analysis file
+> ### libraries
+> library(tidyverse)
+── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.1.3     ✔ readr     2.1.4
+✔ forcats   1.0.0     ✔ stringr   1.5.0
+✔ ggplot2   3.4.3     ✔ tibble    3.2.1
+✔ lubridate 1.9.3     ✔ tidyr     1.3.0
+✔ purrr     1.0.2     
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+> library(vroom)
+
+Attaching package: ‘vroom’
+
+The following objects are masked from ‘package:readr’:
+
+    as.col_spec, col_character, col_date, col_datetime, col_double,
+    col_factor, col_guess, col_integer, col_logical, col_number,
+    col_skip, col_time, cols, cols_condense, cols_only, date_names,
+    date_names_lang, date_names_langs, default_locale, fwf_cols,
+    fwf_empty, fwf_positions, fwf_widths, locale, output_column,
+    problems, spec
+
+> #install.packages("embed")
+> library(embed)
+Loading required package: recipes
+
+Attaching package: ‘recipes’
+
+The following object is masked from ‘package:stringr’:
+
+    fixed
+
+The following object is masked from ‘package:stats’:
+
+    step
+
+> #library(ggmosaic)
+> library(tidymodels)
+── Attaching packages ────────────────────────────────────── tidymodels 1.1.1 ──
+✔ broom        1.0.5     ✔ rsample      1.2.0
+✔ dials        1.2.0     ✔ tune         1.1.2
+✔ infer        1.0.5     ✔ workflows    1.1.3
+✔ modeldata    1.2.0     ✔ workflowsets 1.0.1
+✔ parsnip      1.1.1     ✔ yardstick    1.2.0
+── Conflicts ───────────────────────────────────────── tidymodels_conflicts() ──
+✖ scales::discard() masks purrr::discard()
+✖ dplyr::filter()   masks stats::filter()
+✖ recipes::fixed()  masks stringr::fixed()
+✖ dplyr::lag()      masks stats::lag()
+✖ yardstick::spec() masks vroom::spec(), readr::spec()
+✖ recipes::step()   masks stats::step()
+• Use suppressPackageStartupMessages() to eliminate package startup messages
+> ### read in test and training data
+> az_train <- vroom("train.csv")
+Rows: 32769 Columns: 10
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+dbl (10): ACTION, RESOURCE, MGR_ID, ROLE_ROLLUP_1, ROLE_ROLLUP_2, ROLE_DEPTN...
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> az_test <- vroom("test.csv")
+Rows: 58921 Columns: 10
+── Column specification ────────────────────────────────────────────────────────
+Delimiter: ","
+dbl (10): id, RESOURCE, MGR_ID, ROLE_ROLLUP_1, ROLE_ROLLUP_2, ROLE_DEPTNAME,...
+
+ℹ Use `spec()` to retrieve the full column specification for this data.
+ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+> 
+> ## make action a factor
+> 
+> az_train$ACTION = factor(az_train$ACTION)
+> 
+> #head(az_train)
+> 
+> ## explore the data
+> # proportion of 1's and 0's
+> #ggplot(data=az_train) +
+> #  geom_bar(aes(x = ACTION))
+> 
+> # number of 1's for job titles with over 500 1's
+> #tibble(ROLE_TITLE = az_train$ROLE_TITLE,ACTION = az_train$ACTION) %>%
+> #  group_by(ROLE_TITLE) %>% summarize(approved = sum(ACTION)) %>% filter(approved > 500) %>%
+>  # ggplot() +
+>  # geom_col(aes(x = as.factor(ROLE_TITLE), y = approved))
+> 
+> 
+> 
+> az_recipe <- recipe(ACTION~., data=az_train) %>%
++   step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
++   step_other(all_nominal_predictors(), threshold = .01) %>% # combines categorical values that occur <1% into an "other" value
++   step_dummy(all_nominal_predictors())
+>    
+> 
+> 
+> # apply the recipe to the data
+> prep <- prep(az_recipe)
+> baked <- bake(prep, new_data = az_train)
+> 
+> 
+> ## 112
+> 
+> ### LOGISTIC REGRESSION
+> # fit a logistic regression model
+> 
+> logistic_model <- logistic_reg() %>%
++   set_engine("glm")
+> 
+> 
+> # set up the workflow
+> 
+> logistic_wf <- workflow() %>%
++   add_recipe(az_recipe) %>%
++   add_model(logistic_model) %>%
++   fit(data = az_train)
+> 
+> 
+> logistic_preds <- predict(logistic_wf, new_data = az_test,
++                           type = "prob")
+Warning message:
+In predict.lm(object, newdata, se.fit, scale = 1, type = if (type ==  :
+  prediction from rank-deficient fit; attr(*, "non-estim") has doubtful cases
+> 
+> # prepare for submission to kaggle
+> 
+> logistic_output <- tibble(id = az_test$id, Action = logistic_preds$.pred_1)
+> 
+> vroom_write(logistic_output, "logisticPreds.csv", delim = ",")
+> 
+> 
+> 
+> 
+> ### PENALIZED LOGISTIC REGRESSION
+> 
+> # use target encoding
+> 
+> # set up penalized regression recipe
+> az_pen_recipe <- recipe(ACTION~., data=az_train) %>%
++   step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
++   step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION))
+> 
+> 
+> 
+> # apply the recipe to the data
+> prep <- prep(az_pen_recipe)
+> 
+> baked <- bake(prep, new_data = az_train)
+> 
+> # set up model and workflow
+> plog_mod <- logistic_reg(mixture = tune(), penalty = tune()) %>%
++   set_engine("glmnet")
+> 
+> az_pen_wf <- 
++     workflow() %>%
++     add_recipe(az_pen_recipe) %>%
++     add_model(plog_mod)
+> 
+> ## set up a tuning grid
+> tuning_grid <-
++   grid_regular(penalty(),
++                mixture(),
++                levels = 6)
+> 
+> ## split into folds
+> folds <- vfold_cv(az_train, v = 6, repeats = 1)
+> 
+> # run cv
+> 
+> CV_results <-
++   az_pen_wf %>%
++   tune_grid(resamples = folds,
++             grid = tuning_grid,
++             metrics = metric_set(roc_auc))
+→ A | warning: Model failed to converge with max|grad| = 0.329297 (tol = 0.002, component 1), Model is nearly unidentifiable: very large eigenvalue
+                - Rescale variables?
+There were issues with some computations   A: x1
+There were issues with some computations   A: x1
+
+> 
+> # find best tuning parm values
+> 
+> best_tune <-
++   CV_results %>%
++   select_best("roc_auc")
+> 
+> # finalize wf and get preds
+> 
+> final_wf <-
++   az_pen_wf %>%
++   finalize_workflow(best_tune) %>%
++   fit(data = az_train)
+> 
+> plog_preds <-
++   final_wf %>%
++   predict(new_data = az_test, type = "prob")
+> 
+> # prepare and export preds to csv for kaggle
+> 
+> plog_output <- tibble(id = az_test$id, Action = plog_preds$.pred_1)
+> 
+> vroom_write(plog_output, "PenLogPreds.csv", delim = ",")
+> 
+> 
+> 
+> 
+> ### batch computing
+> 
+> # R (open R session)
+> # R CMD BATCH --no-save --no-restore AmazonAnalysis.R &
+> # 
+> 
+> # use save() to save R objects
+> # save(file = "filename.RData", list = c("logReg_wf"))
+> # then, load("filename.RData")
+> #, or vroom write
+> 
+> 
+> ## parallel computing
+> 
+> #library(doParallel)
+> #parallel::detectCores() # count cores (12)
+> #cl <- makePSOCKcluster(num_cores)
+> #registerDoParallel(cl)
+> 
+> #... ## insert code
+> 
+> #stopCluster(cl)
+> 
+> proc.time()
+   user  system elapsed 
+492.488   4.240 271.051 
