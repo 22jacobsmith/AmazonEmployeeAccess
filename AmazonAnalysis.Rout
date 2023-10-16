@@ -72,7 +72,7 @@ The following object is masked from ‘package:stats’:
 ✖ dplyr::lag()      masks stats::lag()
 ✖ yardstick::spec() masks vroom::spec(), readr::spec()
 ✖ recipes::step()   masks stats::step()
-• Use suppressPackageStartupMessages() to eliminate package startup messages
+• Learn how to get started at https://www.tidymodels.org/start/
 > ### read in test and training data
 > az_train <- vroom("train.csv")
 Rows: 32769 Columns: 10
@@ -195,10 +195,13 @@ In predict.lm(object, newdata, se.fit, scale = 1, type = if (type ==  :
 +   tune_grid(resamples = folds,
 +             grid = tuning_grid,
 +             metrics = metric_set(roc_auc))
-→ A | warning: Model failed to converge with max|grad| = 0.329297 (tol = 0.002, component 1), Model is nearly unidentifiable: very large eigenvalue
+→ A | warning: Model failed to converge with max|grad| = 0.332759 (tol = 0.002, component 1), Model is nearly unidentifiable: very large eigenvalue
                 - Rescale variables?
 There were issues with some computations   A: x1
-There were issues with some computations   A: x1
+→ B | warning: Model failed to converge with max|grad| = 0.410357 (tol = 0.002, component 1), Model is nearly unidentifiable: very large eigenvalue
+                - Rescale variables?, Model failed to converge with max|grad| = 0.330707 (tol = 0.002, component 1)
+There were issues with some computations   A: x1There were issues with some computations   A: x1   B: x1
+There were issues with some computations   A: x1   B: x1
 
 > 
 > # find best tuning parm values
@@ -250,6 +253,61 @@ There were issues with some computations   A: x1
 > 
 > #stopCluster(cl)
 > 
-> proc.time()
-   user  system elapsed 
-492.488   4.240 271.051 
+> 
+> 
+> 
+> #### RANDOM FORESTS
+> library(doParallel)
+Loading required package: foreach
+
+Attaching package: ‘foreach’
+
+The following objects are masked from ‘package:purrr’:
+
+    accumulate, when
+
+Loading required package: iterators
+Loading required package: parallel
+>  cl <- makePSOCKcluster(5)
+>  registerDoParallel(cl)
+> 
+> # set up rf recipe
+> az_rf_recipe <- recipe(ACTION~., data=az_train) %>%
++   step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
++   step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION))
+> 
+> 
+> 
+> # apply the recipe to the data
+> prep <- prep(az_rf_recipe)
+> 
+> baked <- bake(prep, new_data = az_train)
+> 
+> 
+> # set up model and workflow
+> rf_mod <- rand_forest(mtry = tune(), min_n = tune(),
++                       trees = 500) %>%
++   set_engine("ranger") %>%
++   set_mode("classification")
+> 
+> az_rf_wf <- 
++   workflow() %>%
++   add_recipe(az_rf_recipe) %>%
++   add_model(rf_mod)
+> 
+> ## set up a tuning grid
+> tuning_grid <-
++   grid_regular(mtry(range = c(1,9)),
++                min_n(),
++                levels = 6)
+> 
+> ## split into folds
+> folds <- vfold_cv(az_train, v = 6, repeats = 1)
+> 
+> # run cv
+> 
+> CV_results <-
++   az_rf_wf %>%
++   tune_grid(resamples = folds,
++             grid = tuning_grid,
++             metrics = metric_set(roc_auc))
