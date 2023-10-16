@@ -43,19 +43,10 @@ The following objects are masked from ‘package:readr’:
     fwf_empty, fwf_positions, fwf_widths, locale, output_column,
     problems, spec
 
-> library(embed)
-Loading required package: recipes
-
-Attaching package: ‘recipes’
-
-The following object is masked from ‘package:stringr’:
-
-    fixed
-
-The following object is masked from ‘package:stats’:
-
-    step
-
-> library(ggmosaic)
-Error in library(ggmosaic) : there is no package called ‘ggmosaic’
+> install.packages("embed")
+Installing package into ‘/usr/local/lib/R/site-library’
+(as ‘lib’ is unspecified)
+Warning in install.packages("embed") :
+  'lib = "/usr/local/lib/R/site-library"' is not writable
+Error in install.packages("embed") : unable to install packages
 Execution halted

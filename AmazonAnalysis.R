@@ -2,7 +2,7 @@
 ### libraries
 library(tidyverse)
 library(vroom)
-install.packages("embed")
+#install.packages("embed")
 library(embed)
 #library(ggmosaic)
 library(tidymodels)
