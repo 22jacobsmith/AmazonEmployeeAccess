@@ -2,8 +2,9 @@
 ### libraries
 library(tidyverse)
 library(vroom)
+install.packages("embed")
 library(embed)
-library(ggmosaic)
+#library(ggmosaic)
 library(tidymodels)
 ### read in test and training data
 az_train <- vroom("train.csv")
@@ -76,7 +77,6 @@ vroom_write(logistic_output, "logisticPreds.csv", delim = ",")
 # set up penalized regression recipe
 az_pen_recipe <- recipe(ACTION~., data=az_train) %>%
   step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
-  step_other(all_nominal_predictors(), threshold = .001) %>%
   step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION))
 
 
@@ -99,10 +99,10 @@ az_pen_wf <-
 tuning_grid <-
   grid_regular(penalty(),
                mixture(),
-               levels = 5)
+               levels = 6)
 
 ## split into folds
-folds <- vfold_cv(az_train, v = 5, repeats = 1)
+folds <- vfold_cv(az_train, v = 6, repeats = 1)
 
 # run cv
 
@@ -134,3 +134,29 @@ plog_preds <-
 plog_output <- tibble(id = az_test$id, Action = plog_preds$.pred_1)
 
 vroom_write(plog_output, "PenLogPreds.csv", delim = ",")
+
+
+
+
+### batch computing
+
+# R (open R session)
+# R CMD BATCH --no-save --no-restore AmazonAnalysis.R &
+# 
+
+# use save() to save R objects
+# save(file = "filename.RData", list = c("logReg_wf"))
+# then, load("filename.RData")
+#, or vroom write
+
+
+## parallel computing
+
+#library(doParallel)
+#parallel::detectCores() # count cores (12)
+#cl <- makePSOCKcluster(num_cores)
+#registerDoParallel(cl)
+
+#... ## insert code
+
+#stopCluster(cl)
