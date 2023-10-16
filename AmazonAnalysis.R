@@ -18,14 +18,14 @@ az_train$ACTION = factor(az_train$ACTION)
 
 ## explore the data
 # proportion of 1's and 0's
-ggplot(data=az_train) +
-  geom_bar(aes(x = ACTION))
+#ggplot(data=az_train) +
+#  geom_bar(aes(x = ACTION))
 
 # number of 1's for job titles with over 500 1's
-tibble(ROLE_TITLE = az_train$ROLE_TITLE,ACTION = az_train$ACTION) %>%
-  group_by(ROLE_TITLE) %>% summarize(approved = sum(ACTION)) %>% filter(approved > 500) %>%
-  ggplot() +
-  geom_col(aes(x = as.factor(ROLE_TITLE), y = approved))
+#tibble(ROLE_TITLE = az_train$ROLE_TITLE,ACTION = az_train$ACTION) %>%
+#  group_by(ROLE_TITLE) %>% summarize(approved = sum(ACTION)) %>% filter(approved > 500) %>%
+ # ggplot() +
+ # geom_col(aes(x = as.factor(ROLE_TITLE), y = approved))
 
 
 
