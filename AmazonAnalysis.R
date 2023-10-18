@@ -234,3 +234,74 @@ rf_output <- tibble(id = az_test$id, Action = rf_preds$.pred_1)
 vroom_write(rf_output, "AmazonRFPreds.csv", delim = ",")
 
  stopCluster(cl)
+
+ 
+ 
+ 
+#### naive bayes
+ 
+library(doParallel)
+cl <- makePSOCKcluster(10)
+registerDoParallel(cl) 
+ 
+ 
+ 
+ 
+library(discrim)
+ 
+nb_model <-
+  naive_Bayes(Laplace = tune(), smoothness = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("naivebayes")
+
+
+nb_wf <-
+  workflow() %>%
+  add_recipe(az_rf_recipe) %>%
+  add_model(nb_model)
+
+## set up a tuning grid
+tuning_grid <-
+  grid_regular(Laplace(),
+               smoothness(),
+               levels = 10)
+
+## split into folds
+folds <- vfold_cv(az_train, v = 5, repeats = 1)
+
+# run cv
+
+CV_results <-
+  nb_wf %>%
+  tune_grid(resamples = folds,
+            grid = tuning_grid,
+            metrics = metric_set(roc_auc))
+
+# find best tuning parm values
+
+best_tune <-
+  CV_results %>%
+  select_best("roc_auc")
+
+# finalize wf and get preds
+
+final_wf <-
+  nb_wf %>%
+  finalize_workflow(best_tune) %>%
+  fit(data = az_train)
+
+nb_preds <-
+  final_wf %>%
+  predict(new_data = az_test, type = "prob")
+
+# prepare and export preds to csv for kaggle
+
+nb_output <- tibble(id = az_test$id, Action = nb_preds$.pred_1)
+
+vroom_write(nb_output, "AmazonNBPreds.csv", delim = ",")
+
+
+ 
+stopCluster(cl) 
+ 
+ 
