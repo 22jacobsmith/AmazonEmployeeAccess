@@ -305,7 +305,6 @@ vroom_write(nb_output, "AmazonNBPreds.csv", delim = ",")
 stopCluster(cl) 
 
 
-
 ### KNN Classification
 
 library(doParallel)
@@ -374,6 +373,143 @@ vroom_write(knn_output, "AmazonKNNPreds.csv", delim = ",")
 
 
 stopCluster(cl) 
+
+
+
+### Principal Components Regression
+
+
+library(doParallel)
+cl <- makePSOCKcluster(5)
+registerDoParallel(cl) 
+
+
+## set up recipe
+
+az_pcr_recipe <- recipe(ACTION~., data=az_train) %>%
+  step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
+  step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
+  step_normalize(all_numeric_predictors()) %>%
+  step_pca(all_predictors(), threshold = 0.85)
+
+# apply the recipe to the data
+prep <- prep(az_pcr_recipe)
+
+baked <- bake(prep, new_data = az_train)
+
+## set up model and workflow
+knn_model <-
+  nearest_neighbor(neighbors = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("kknn")
+
+
+knn_wf <-
+  workflow() %>%
+  add_recipe(az_pcr_recipe) %>%
+  add_model(knn_model)
+
+## set up a tuning grid
+tuning_grid <-
+  grid_regular(neighbors(),
+               levels = 5)
+
+## split into folds
+folds <- vfold_cv(az_train, v = 5, repeats = 1)
+
+# run cv
+
+CV_results <-
+  knn_wf %>%
+  tune_grid(resamples = folds,
+            grid = tuning_grid,
+            metrics = metric_set(roc_auc))
+
+# find best tuning parm values
+
+best_tune <-
+  CV_results %>%
+  select_best("roc_auc")
+
+# finalize wf and get preds
+
+final_wf <-
+  knn_wf %>%
+  finalize_workflow(best_tune) %>%
+  fit(data = az_train)
+
+knn_preds <-
+  final_wf %>%
+  predict(new_data = az_test, type = "prob")
+
+# prepare and export preds to csv for kaggle
+
+knn_output <- tibble(id = az_test$id, Action = knn_preds$.pred_1)
+
+
+vroom_write(knn_output, "AmazonKNNPreds.csv", delim = ",")
+
+
+
+
+## pca nb model
+
+
+library(discrim)
+
+
+nb_model <-
+  naive_Bayes(Laplace = tune(), smoothness = tune()) %>%
+  set_mode("classification") %>%
+  set_engine("naivebayes")
+
+
+nb_wf <-
+  workflow() %>%
+  add_recipe(az_pcr_recipe) %>%
+  add_model(nb_model)
+
+## set up a tuning grid
+tuning_grid <-
+  grid_regular(Laplace(),
+               smoothness(),
+               levels = 10)
+
+## split into folds
+folds <- vfold_cv(az_train, v = 5, repeats = 1)
+
+# run cv
+
+CV_results <-
+  nb_wf %>%
+  tune_grid(resamples = folds,
+            grid = tuning_grid,
+            metrics = metric_set(roc_auc))
+
+# find best tuning parm values
+
+best_tune <-
+  CV_results %>%
+  select_best("roc_auc")
+
+# finalize wf and get preds
+
+final_wf <-
+  nb_wf %>%
+  finalize_workflow(best_tune) %>%
+  fit(data = az_train)
+
+nb_preds <-
+  final_wf %>%
+  predict(new_data = az_test, type = "prob")
+
+# prepare and export preds to csv for kaggle
+
+nb_output <- tibble(id = az_test$id, Action = nb_preds$.pred_1)
+
+vroom_write(nb_output, "AmazonNBPreds.csv", delim = ",")
+
+
 
 
 
