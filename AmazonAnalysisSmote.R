@@ -22,11 +22,12 @@ library(themis)
 smote_recipe <-
   recipe(ACTION~., data=az_train) %>%
   step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
+  step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
   step_normalize(all_numeric_predictors()) %>%
   step_smote(all_outcomes(), neighbors = 5)
 
-prep <- prep(smote_recipe)
-baked <- bake(prep, new_data = az_train)
+# prep <- prep(smote_recipe)
+# baked <- bake(prep, new_data = az_train)
 
 
 
