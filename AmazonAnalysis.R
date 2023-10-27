@@ -100,10 +100,10 @@ az_pen_wf <-
 tuning_grid <-
   grid_regular(penalty(),
                mixture(),
-               levels = 6)
+               levels = 5)
 
 ## split into folds
-folds <- vfold_cv(az_train, v = 6, repeats = 1)
+folds <- vfold_cv(az_train, v = 5, repeats = 1)
 
 # run cv
 
@@ -640,3 +640,237 @@ svm_output <- tibble(id = az_test$id, Action = svm_preds$.pred_1)
 vroom_write(svm_output, "AmazonSVMPreds.csv", delim = ",")
 
 # stopCluster(cl)
+
+
+
+### make best model possible
+
+
+# set up rf recipe
+az_rf_recipe <- recipe(ACTION~., data=az_train) %>%
+  step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
+  step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION))
+
+
+
+# apply the recipe to the data
+prep <- prep(az_rf_recipe)
+
+baked <- bake(prep, new_data = az_train)
+
+
+# set up model and workflow
+rf_mod <- rand_forest(mtry = 1, min_n = 22,
+                      trees = 1000) %>%
+  set_engine("ranger") %>%
+  set_mode("classification")
+
+az_rf_wf <- 
+  workflow() %>%
+  add_recipe(az_rf_recipe) %>%
+  add_model(rf_mod)
+# 
+## set up a tuning grid
+tuning_grid <-
+  grid_regular(mtry(range = c(1,9)),
+               min_n(),
+               levels = 9)
+# 
+# ## split into folds
+# folds <- vfold_cv(az_train, v = 5, repeats = 1)
+# 
+# # run cv
+# 
+# CV_results <-
+#   az_rf_wf %>%
+#   tune_grid(resamples = folds,
+#             grid = tuning_grid,
+#             metrics = metric_set(roc_auc))
+# 
+# # find best tuning parm values
+# 
+# best_tune <-
+#   CV_results %>%
+#   select_best("roc_auc")
+# 
+# # finalize wf and get preds
+
+final_wf <-
+  az_rf_wf %>%
+  # finalize_workflow(best_tune) %>%
+  fit(data = az_train)
+
+rf_preds <-
+  final_wf %>%
+  predict(new_data = az_test, type = "prob")
+
+# prepare and export preds to csv for kaggle
+
+rf_output <- tibble(id = az_test$id, Action = rf_preds$.pred_1)
+
+vroom_write(rf_output, "AmazonRFPreds.csv", delim = ",")
+
+
+## try a BART classification model
+
+
+
+
+
+my_mod <- bart(
+  trees = 10
+) %>% 
+  set_engine("dbarts") %>% 
+  set_mode("classification") %>% 
+  translate()
+
+workflow_bart <- workflow() %>%
+  add_recipe(az_rf_recipe) %>%
+  add_model(my_mod) %>%
+  fit(data = az_train) # fit the workflow
+
+# 
+# final_wf <-
+#   workflow_bart %>%
+#   # finalize_workflow(best_tune) %>%
+#   fit(data = az_train)
+
+bart_preds <-
+  workflow_bart %>%
+  predict(new_data = az_test, type = "prob")
+
+# prepare and export preds to csv for kaggle
+
+bart_output <- tibble(id = az_test$id, Action = bart_preds$.pred_1)
+
+vroom_write(bart_output, "AmazonBARTPreds.csv", delim = ",")
+
+
+### try a boosting model
+
+
+library(doParallel)
+cl <- makePSOCKcluster(4)
+registerDoParallel(cl)
+
+# set up model and workflow
+boost_mod <- boost_tree(tree_depth = tune(), learn_rate = tune(),
+                        trees = tune()) %>%
+  set_engine("xgboost") %>%
+  set_mode("classification")
+
+boost_wf <- 
+  workflow() %>%
+  add_recipe(az_rf_recipe) %>%
+  add_model(boost_mod)
+# 
+## set up a tuning grid
+tuning_grid <-
+  grid_regular(tree_depth(),
+               learn_rate(),
+               trees(),
+               levels = 5)
+
+## split into folds
+folds <- vfold_cv(az_train, v = 4, repeats = 1)
+
+# run cv
+
+CV_results <-
+  boost_wf %>%
+  tune_grid(resamples = folds,
+            grid = tuning_grid,
+            metrics = metric_set(roc_auc))
+
+# find best tuning parm values
+
+best_tune <-
+  CV_results %>%
+  select_best("roc_auc")
+
+# finalize wf and get preds
+
+final_wf <-
+  boost_wf %>%
+  finalize_workflow(best_tune) %>%
+  fit(data = az_train)
+
+boost_preds <-
+  final_wf %>%
+  predict(new_data = az_test, type = "prob")
+
+# prepare and export preds to csv for kaggle
+
+boost_output <- tibble(id = az_test$id, Action = boost_preds$.pred_1)
+
+vroom_write(boost_output, "AmazonBoostPreds.csv", delim = ",")
+
+
+
+
+## use smote to balance the data
+
+library(themis)
+
+smote_recipe <-
+  recipe(ACTION~., data=az_train) %>%
+  step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
+  step_dummy(all_nominal_predictors()) %>%
+  step_smote(all_outcomes(), neighbors = 5) %>%
+  step_upsample()
+
+
+
+
+# set up model and workflow
+rf_mod <- rand_forest(mtry = tune(), min_n = tune(),
+                      trees = 500) %>%
+  set_engine("ranger") %>%
+  set_mode("classification")
+
+
+az_rf_wf <- 
+  workflow() %>%
+  add_recipe(smote_recipe) %>%
+  add_model(rf_mod)
+
+## set up a tuning grid
+tuning_grid <-
+  grid_regular(mtry(range = c(1,9)),
+               min_n(),
+               levels = 5)
+
+## split into folds
+folds <- vfold_cv(az_train, v = 3, repeats = 1)
+
+# run cv
+
+CV_results <-
+  az_rf_wf %>%
+  tune_grid(resamples = folds,
+            grid = tuning_grid,
+            metrics = metric_set(roc_auc))
+
+# find best tuning parm values
+
+best_tune <-
+  CV_results %>%
+  select_best("roc_auc")
+
+# finalize wf and get preds
+
+final_wf <-
+  az_rf_wf %>%
+  finalize_workflow(best_tune) %>%
+  fit(data = az_train)
+
+rf_preds <-
+  final_wf %>%
+  predict(new_data = az_test, type = "prob")
+
+# prepare and export preds to csv for kaggle
+
+rf_output <- tibble(id = az_test$id, Action = rf_preds$.pred_1)
+
+vroom_write(rf_output, "AmazonRFPreds.csv", delim = ",")
+
