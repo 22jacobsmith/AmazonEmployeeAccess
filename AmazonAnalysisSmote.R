@@ -164,7 +164,7 @@ rf_output <- tibble(id = az_test$id, Action = rf_preds$.pred_1)
 
 vroom_write(rf_output, "AmazonRFPreds.csv", delim = ",")
 
-
+# stopcluster(cl)
 
 ###naive bayes
 
@@ -300,7 +300,7 @@ tuning_grid <-
                levels = 5)
 
 ## split into folds
-folds <- vfold_cv(az_train, v = 3, repeats = 1)
+folds <- vfold_cv(az_train, v = 5, repeats = 1)
 
 # run cv
 

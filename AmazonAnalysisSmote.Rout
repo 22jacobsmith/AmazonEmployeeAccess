@@ -58,7 +58,7 @@ The following objects are masked from ‘package:readr’:
 ✖ dplyr::lag()      masks stats::lag()
 ✖ yardstick::spec() masks vroom::spec(), readr::spec()
 ✖ recipes::step()   masks stats::step()
-• Search for functions across packages at https://www.tidymodels.org/find/
+• Dig deeper into tidy modeling with R at https://www.tmwr.org
 > library(embed)
 > 
 > ### read in test and training data
@@ -92,22 +92,126 @@ dbl (10): id, RESOURCE, MGR_ID, ROLE_ROLLUP_1, ROLE_ROLLUP_2, ROLE_DEPTNAME,...
 > smote_recipe <-
 +   recipe(ACTION~., data=az_train) %>%
 +   step_mutate_at(all_numeric_predictors(), fn = factor) %>% # turn all numeric features into factors
++   step_lencode_mixed(all_nominal_predictors(), outcome = vars(ACTION)) %>%
 +   step_normalize(all_numeric_predictors()) %>%
 +   step_smote(all_outcomes(), neighbors = 5)
 > 
-> prep <- prep(smote_recipe)
-Error in `step_smote()`:
-Caused by error in `prep()`:
-! All columns selected for the step should be double, or integer.
-Backtrace:
-    ▆
- 1. ├─recipes::prep(smote_recipe)
- 2. └─recipes:::prep.recipe(smote_recipe)
- 3.   ├─recipes:::recipes_error_context(...)
- 4.   │ ├─base::withCallingHandlers(...)
- 5.   │ └─base::force(expr)
- 6.   ├─recipes::prep(x$steps[[i]], training = training, info = x$term_info)
- 7.   └─themis:::prep.step_smote(x$steps[[i]], training = training, info = x$term_info)
- 8.     └─recipes::check_type(...)
- 9.       └─rlang::abort(...)
-Execution halted
+> # prep <- prep(smote_recipe)
+> # baked <- bake(prep, new_data = az_train)
+> 
+> 
+> 
+> ### run each of the models
+> 
+> ## logistic
+> 
+> logistic_model <- logistic_reg() %>%
++   set_engine("glm")
+> 
+> 
+> # set up the workflow
+> 
+> logistic_wf <- workflow() %>%
++   add_recipe(smote_recipe) %>%
++   add_model(logistic_model) %>%
++   fit(data = az_train)
+> 
+> 
+> logistic_preds <- predict(logistic_wf, new_data = az_test,
++                           type = "prob")
+> 
+> # prepare for submission to kaggle
+> 
+> logistic_output <- tibble(id = az_test$id, Action = logistic_preds$.pred_1)
+> 
+> vroom_write(logistic_output, "logisticPreds.csv", delim = ",")
+> 
+> 
+> ## penalized logistic
+> 
+> 
+> # set up model and workflow
+> plog_mod <- logistic_reg(mixture = tune(), penalty = tune()) %>%
++   set_engine("glmnet")
+> 
+> az_pen_wf <- 
++   workflow() %>%
++   add_recipe(smote_recipe) %>%
++   add_model(plog_mod)
+> 
+> ## set up a tuning grid
+> tuning_grid <-
++   grid_regular(penalty(),
++                mixture(),
++                levels = 5)
+> 
+> ## split into folds
+> folds <- vfold_cv(az_train, v = 5, repeats = 1)
+> 
+> # run cv
+> 
+> CV_results <-
++   az_pen_wf %>%
++   tune_grid(resamples = folds,
++             grid = tuning_grid,
++             metrics = metric_set(roc_auc))
+→ A | warning: Model failed to converge with max|grad| = 0.396585 (tol = 0.002, component 1), Model is nearly unidentifiable: very large eigenvalue
+                - Rescale variables?
+There were issues with some computations   A: x1
+There were issues with some computations   A: x1
+
+> 
+> # find best tuning parm values
+> 
+> best_tune <-
++   CV_results %>%
++   select_best("roc_auc")
+> 
+> # finalize wf and get preds
+> 
+> final_wf <-
++   az_pen_wf %>%
++   finalize_workflow(best_tune) %>%
++   fit(data = az_train)
+> 
+> plog_preds <-
++   final_wf %>%
++   predict(new_data = az_test, type = "prob")
+> 
+> # prepare and export preds to csv for kaggle
+> 
+> plog_output <- tibble(id = az_test$id, Action = plog_preds$.pred_1)
+> 
+> vroom_write(plog_output, "PenLogPreds.csv", delim = ",")
+> 
+> 
+> ## random forests
+> 
+> 
+> # set up model and workflow
+> rf_mod <- rand_forest(mtry = tune(), min_n = tune(),
++                       trees = 500) %>%
++   set_engine("ranger") %>%
++   set_mode("classification")
+> 
+> az_rf_wf <- 
++   workflow() %>%
++   add_recipe(smote_recipe) %>%
++   add_model(rf_mod)
+> 
+> ## set up a tuning grid
+> tuning_grid <-
++   grid_regular(mtry(range = c(1,9)),
++                min_n(),
++                levels = 5)
+> 
+> ## split into folds
+> folds <- vfold_cv(az_train, v = 5, repeats = 1)
+> 
+> # run cv
+> 
+> CV_results <-
++   az_rf_wf %>%
++   tune_grid(resamples = folds,
++             grid = tuning_grid,
++             metrics = metric_set(roc_auc))
